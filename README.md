@@ -84,6 +84,10 @@ Run all Go tests with:
 go test ./...
 ```
 
+## Playtesting
+
+For mobile playtesting with friends, see `docs/07_PLAYTESTING.md`.
+
 ## Notes
 
 - The server bootstraps the database schema and seeds a set of sample categories and questions on startup.
