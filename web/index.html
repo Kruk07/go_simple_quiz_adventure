@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Quiz Adventure Test Client</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 16px; }
+        .grid { display: grid; gap: 16px; grid-template-columns: minmax(320px, 1fr) 1fr; }
+        .panel { border: 1px solid #ccc; border-radius: 8px; padding: 12px; background: #f8f8f8; }
+        .panel h2 { margin-top: 0; }
+        button { margin: 4px 4px 4px 0; padding: 8px 12px; }
+        .row { display: flex; flex-wrap: wrap; gap: 8px; }
+        .option-button { min-width: 104px; }
+        #log { min-height: 120px; max-height: 220px; padding: 12px; background: #111; color: #eee; overflow: auto; white-space: pre-wrap; border-radius: 6px; }
+        .field { margin-bottom: 8px; }
+        .field label { display: block; margin-bottom: 4px; font-weight: bold; }
+        .info { margin: 0; padding: 0; }
+        .summary { margin: 0 0 12px 0; }
+    </style>
+</head>
+<body>
+    <h1>Quiz Adventure Test Client</h1>
+    <div class="grid">
+        <div class="panel">
+            <h2>Connection</h2>
+            <div class="field">
+                <label for="room-code">Room Code</label>
+                <input id="room-code" placeholder="Room Code" />
+            </div>
+            <div class="field">
+                <label for="nickname">Nickname</label>
+                <input id="nickname" placeholder="Nickname" />
+            </div>
+            <div class="row">
+                <button id="create-room">Create Room</button>
+                <button id="join-room">Join Room</button>
+            </div>
+            <div class="row">
+                <button id="start-game">Start Game</button>
+            </div>
+            <div class="field">
+                <p class="summary" id="status">Not connected</p>
+                <p class="summary" id="room-info">No room selected</p>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h2>Current Game</h2>
+            <div id="game-state">No game yet.</div>
+        </div>
+
+        <div class="panel">
+            <h2>Category Voting</h2>
+            <div id="category-buttons" class="row"></div>
+        </div>
+
+        <div class="panel">
+            <h2>Answer Submission</h2>
+            <div id="answer-buttons" class="row"></div>
+        </div>
+
+        <div class="panel" style="grid-column: 1 / -1;">
+            <h2>Event Log</h2>
+            <div id="log">Ready.</div>
+        </div>
+    </div>
+
+    <script>
+        const statusEl = document.getElementById('status');
+        const roomInfoEl = document.getElementById('room-info');
+        const gameStateEl = document.getElementById('game-state');
+        const logEl = document.getElementById('log');
+        const categoryButtonsEl = document.getElementById('category-buttons');
+        const answerButtonsEl = document.getElementById('answer-buttons');
+
+        let socket = null;
+        let currentQuestionId = '';
+        let categoryOptions = [];
+
+        function appendLog(message) {
+            logEl.textContent += '\n' + message;
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function setStatus(message) {
+            statusEl.textContent = message;
+        }
+
+        function setRoomInfo(message) {
+            roomInfoEl.textContent = message;
+        }
+
+        function renderGameState(content) {
+            gameStateEl.innerHTML = content;
+        }
+
+        function createButton(text, handler) {
+            const button = document.createElement('button');
+            button.textContent = text;
+            button.className = 'option-button';
+            button.onclick = handler;
+            return button;
+        }
+
+        function renderCategoryButtons() {
+            categoryButtonsEl.innerHTML = '';
+            if (categoryOptions.length === 0) {
+                categoryButtonsEl.textContent = 'Waiting for CATEGORY_VOTE_START...';
+                return;
+            }
+            categoryOptions.forEach((option, index) => {
+                const label = String.fromCharCode(65 + index);
+                const button = createButton(`${label}: ${option.name}`, () => {
+                    if (!socket || socket.readyState !== WebSocket.OPEN) {
+                        appendLog('Cannot vote: not connected');
+                        return;
+                    }
+                    sendEvent('VOTE_CATEGORY', { categoryId: option.id });
+                    appendLog(`Voted for ${label} (${option.name})`);
+                });
+                categoryButtonsEl.appendChild(button);
+            });
+        }
+
+        function renderAnswerButtons() {
+            answerButtonsEl.innerHTML = '';
+            for (let i = 0; i < 4; i++) {
+                const label = String.fromCharCode(65 + i);
+                const button = createButton(label, () => {
+                    if (!socket || socket.readyState !== WebSocket.OPEN || !currentQuestionId) {
+                        appendLog('Cannot answer: wait for question');
+                        return;
+                    }
+                    sendEvent('SUBMIT_ANSWER', { questionId: currentQuestionId, answer: label });
+                    appendLog(`Submitted answer ${label}`);
+                });
+                answerButtonsEl.appendChild(button);
+            }
+        }
+
+        function sendEvent(type, payload) {
+            if (!socket || socket.readyState !== WebSocket.OPEN) {
+                appendLog('WebSocket not connected');
+                return;
+            }
+            socket.send(JSON.stringify({ type, payload }));
+        }
+
+        document.getElementById('create-room').onclick = async () => {
+            try {
+                const res = await fetch('/create-room');
+                const body = await res.json();
+                document.getElementById('room-code').value = body.roomCode;
+                appendLog(`Created room ${body.roomCode}`);
+            } catch (err) {
+                appendLog('Error creating room: ' + err.message);
+            }
+        };
+
+        document.getElementById('join-room').onclick = () => {
+            const roomCode = document.getElementById('room-code').value.trim();
+            const nickname = document.getElementById('nickname').value.trim();
+            if (!roomCode || !nickname) {
+                appendLog('roomCode and nickname required');
+                return;
+            }
+            const url = `ws://${window.location.host}/join-room?roomCode=${roomCode}&nickname=${nickname}`;
+            socket = new WebSocket(url);
+
+            socket.onopen = () => {
+                setStatus('Connected');
+                setRoomInfo(`Room ${roomCode} as ${nickname}`);
+                appendLog('Connected to room ' + roomCode);
+            };
+
+            socket.onmessage = event => {
+                const message = JSON.parse(event.data);
+                handleServerEvent(message);
+            };
+
+            socket.onclose = () => {
+                setStatus('Disconnected');
+                appendLog('WebSocket closed');
+            };
+
+            socket.onerror = e => {
+                appendLog('WebSocket error: ' + (e.message || 'unknown'));
+            };
+        };
+
+        document.getElementById('start-game').onclick = () => {
+            if (!socket || socket.readyState !== WebSocket.OPEN) {
+                appendLog('Connect first');
+                return;
+            }
+            sendEvent('START_GAME', {});
+            appendLog('START_GAME sent');
+        };
+
+        function handleServerEvent(message) {
+            appendLog(`Server event: ${message.type}`);
+
+            switch (message.type) {
+                case 'LOBBY_UPDATE':
+                    renderLobby(message.payload);
+                    break;
+                case 'CATEGORY_VOTE_START':
+                    categoryOptions = message.payload.categories || [];
+                    renderCategoryButtons();
+                    renderGameState(`<p class="summary">Category voting started</p><p>Select one of the categories below:</p>`);
+                    break;
+                case 'QUESTION_START':
+                    currentQuestionId = message.payload.questionId;
+                    renderQuestion(message.payload);
+                    break;
+                case 'QUESTION_RESULT':
+                    currentQuestionId = '';
+                    renderQuestionResult(message.payload);
+                    break;
+                case 'ROUND_SUMMARY':
+                    currentQuestionId = '';
+                    renderRoundSummary(message.payload);
+                    break;
+                case 'GAME_OVER':
+                    currentQuestionId = '';
+                    renderGameOver(message.payload);
+                    break;
+                default:
+                    appendLog('Unhandled event: ' + message.type);
+            }
+        }
+
+        function renderLobby(payload) {
+            const players = payload.players.map(p => `${p.nickname}${p.isHost ? ' (host)' : ''}${p.connected ? '' : ' [disconnected]'}`);
+            renderGameState(`<p class="summary">Lobby</p><p>Players:</p><ul>${players.map(p => `<li>${p}</li>`).join('')}</ul>`);
+        }
+
+        function renderQuestion(payload) {
+            const options = ['A', 'B', 'C', 'D'].map(letter => {
+                return `<li><strong>${letter}</strong>: ${payload.options[letter] || ''}</li>`;
+            }).join('');
+            renderGameState(`
+                <p class="summary">Question ${payload.questionIndex} / ${payload.totalQuestions}</p>
+                <p><strong>${payload.text}</strong></p>
+                <ul>${options}</ul>
+                <p>Answer with buttons below.</p>
+            `);
+        }
+
+        function renderQuestionResult(payload) {
+            const rows = payload.leaderboard.map(entry => `<li>${entry.nickname}: ${entry.score} (+${entry.gained})</li>`).join('');
+            renderGameState(`
+                <p class="summary">Question Result</p>
+                <p>Correct answer: <strong>${payload.correctAnswer}</strong></p>
+                <ul>${rows}</ul>
+            `);
+        }
+
+        function renderRoundSummary(payload) {
+            const rows = payload.leaderboard.map(entry => `<li>${entry.nickname}: ${entry.score}</li>`).join('');
+            renderGameState(`
+                <p class="summary">Round ${payload.round} Summary</p>
+                <p>Category: <strong>${payload.category}</strong></p>
+                <p>Questions answered: ${payload.questionsAnswered}/${payload.totalQuestions}</p>
+                <ul>${rows}</ul>
+            `);
+        }
+
+        function renderGameOver(payload) {
+            const rows = payload.leaderboard.map(entry => `<li>${entry.nickname}: ${entry.score}</li>`).join('');
+            renderGameState(`
+                <p class="summary">Game Over</p>
+                <p>Winner: <strong>${payload.winner}</strong></p>
+                <ul>${rows}</ul>
+            `);
+        }
+
+        renderAnswerButtons();
+    </script>
+</body>
+</html>
