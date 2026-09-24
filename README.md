@@ -27,6 +27,16 @@ A multiplayer quiz game backend built in Go with WebSocket support, SQLite stora
 3. Optional environment variables:
    - `QUIZ_DB_PATH` — path to the SQLite file (`./quiz.db` by default)
    - `QUIZ_SERVER_PORT` — server port (`8080` by default)
+   - `QUIZ_MAX_ROUNDS` — total rounds in a game (`4` by default)
+   - `QUIZ_QUESTIONS_PER_ROUND` — questions per round (`5` by default)
+   - `QUIZ_CATEGORY_VOTE_SECONDS` — category-voting timer (`15` by default)
+   - `QUIZ_QUESTION_SECONDS` — answer timer per question (`20` by default)
+   - `QUIZ_ROUND_SUMMARY_SECONDS` — time to display the round summary (`5` by default)
+
+Example:
+```bash
+QUIZ_SERVER_PORT=8081 QUIZ_CATEGORY_VOTE_SECONDS=30 QUIZ_QUESTION_SECONDS=25 go run ./cmd/server
+```
 
 ## Browser test client
 
@@ -40,6 +50,8 @@ The project includes a simple browser-based test client in `web/index.html`.
    - start the game
    - vote for categories from a set of 4 options
    - submit answers
+   - restart the game after a completed round or when the game over screen is shown
+   - leave the room and return to the lobby/connection screen
    - see event output from the WebSocket server
 
 ## Game Flow
@@ -65,6 +77,8 @@ The project includes a simple browser-based test client in `web/index.html`.
 
 Client -> Server:
 - `START_GAME` — start the game as the host
+- `RESTART_GAME` — reset the room state and launch a new match as the host
+- `LEAVE_ROOM` — close the current connection and leave the room
 - `VOTE_CATEGORY` — vote for a category
 - `SUBMIT_ANSWER` — submit an answer to the current question
 
@@ -87,6 +101,8 @@ go test ./...
 ## Playtesting
 
 For mobile playtesting with friends, see `docs/07_PLAYTESTING.md`.
+
+The browser client is now mobile-friendly enough for quick local-device tests on the same Wi-Fi network. Use the room code flow, keep the host phone on the same network, and open the game URL on each supported device.
 
 ## Notes
 

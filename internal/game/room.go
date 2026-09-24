@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand"
+	"os"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -39,6 +41,37 @@ func DefaultGameConfig() GameConfig {
 		QuestionDuration:     20 * time.Second,
 		RoundSummaryDuration: 5 * time.Second,
 	}
+}
+
+func GameConfigFromEnv() GameConfig {
+	cfg := DefaultGameConfig()
+
+	if value := os.Getenv("QUIZ_MAX_ROUNDS"); value != "" {
+		if parsed, err := strconv.Atoi(value); err == nil && parsed > 0 {
+			cfg.MaxRounds = parsed
+		}
+	}
+	if value := os.Getenv("QUIZ_QUESTIONS_PER_ROUND"); value != "" {
+		if parsed, err := strconv.Atoi(value); err == nil && parsed > 0 {
+			cfg.QuestionsPerRound = parsed
+		}
+	}
+	if value := os.Getenv("QUIZ_CATEGORY_VOTE_SECONDS"); value != "" {
+		if parsed, err := strconv.Atoi(value); err == nil && parsed > 0 {
+			cfg.CategoryVoteDuration = time.Duration(parsed) * time.Second
+		}
+	}
+	if value := os.Getenv("QUIZ_QUESTION_SECONDS"); value != "" {
+		if parsed, err := strconv.Atoi(value); err == nil && parsed > 0 {
+			cfg.QuestionDuration = time.Duration(parsed) * time.Second
+		}
+	}
+	if value := os.Getenv("QUIZ_ROUND_SUMMARY_SECONDS"); value != "" {
+		if parsed, err := strconv.Atoi(value); err == nil && parsed > 0 {
+			cfg.RoundSummaryDuration = time.Duration(parsed) * time.Second
+		}
+	}
+	return cfg
 }
 
 const (
@@ -140,7 +173,7 @@ func NewRoom(code string) *Room {
 		DisconnectTimers: make(map[string]*time.Timer),
 		State:            RoomStateLobby,
 		Scoreboard:       make(map[string]int),
-		Config:           DefaultGameConfig(),
+		Config:           GameConfigFromEnv(),
 	}
 }
 
@@ -216,6 +249,102 @@ func (r *Room) RestorePlayerConnection(playerID string) bool {
 	return true
 }
 
+func (r *Room) FindDisconnectedPlayerByNickname(nickname string) *Player {
+	r.Mutex.RLock()
+	defer r.Mutex.RUnlock()
+	for _, player := range r.Players {
+		if player.Nickname == nickname && !player.Connected {
+			return player
+		}
+	}
+	return nil
+}
+
+func (r *Room) ReconnectPlayer(nickname string) (*Player, bool) {
+	r.Mutex.Lock()
+	defer r.Mutex.Unlock()
+	for _, player := range r.Players {
+		if player.Nickname == nickname && !player.Connected {
+			player.Connected = true
+			r.stopDisconnectTimer(player.ID)
+			return player, true
+		}
+	}
+	return nil, false
+}
+
+func (r *Room) ResetForNewGame() {
+	r.Mutex.Lock()
+	defer r.Mutex.Unlock()
+
+	if r.categoryTimer != nil {
+		r.categoryTimer.Stop()
+		r.categoryTimer = nil
+	}
+	if r.questionTimer != nil {
+		r.questionTimer.Stop()
+		r.questionTimer = nil
+	}
+	for playerID, timer := range r.DisconnectTimers {
+		timer.Stop()
+		delete(r.DisconnectTimers, playerID)
+	}
+
+	r.Round = 1
+	r.State = RoomStateLobby
+	r.SelectedCategoryID = ""
+	r.SelectedCategoryName = ""
+	r.CurrentQuestionIndex = 0
+	r.QuestionStartedAt = time.Time{}
+	r.QuestionDeadline = time.Time{}
+	r.AnswerSubmissions = map[string]AnswerSubmission{}
+	r.CategoryVotes = make(map[string]string)
+	r.CategoryOptions = nil
+	r.SelectedCategories = nil
+	r.Questions = nil
+	r.Scoreboard = make(map[string]int, len(r.Players))
+	for _, player := range r.Players {
+		player.Connected = true
+		player.IsHost = player.ID == r.HostID
+		r.Scoreboard[player.ID] = 0
+	}
+}
+
+func (r *Room) Shutdown() {
+	r.Mutex.Lock()
+	defer r.Mutex.Unlock()
+
+	if r.categoryTimer != nil {
+		r.categoryTimer.Stop()
+		r.categoryTimer = nil
+	}
+	if r.questionTimer != nil {
+		r.questionTimer.Stop()
+		r.questionTimer = nil
+	}
+	for playerID, timer := range r.DisconnectTimers {
+		timer.Stop()
+		delete(r.DisconnectTimers, playerID)
+	}
+
+	r.State = RoomStateGameOver
+	r.Players = make(map[string]*Player)
+	r.Scoreboard = make(map[string]int)
+	r.AnswerSubmissions = map[string]AnswerSubmission{}
+	r.CategoryVotes = make(map[string]string)
+	r.CategoryOptions = nil
+	r.SelectedCategories = nil
+	r.Questions = nil
+	r.SelectedCategoryID = ""
+	r.SelectedCategoryName = ""
+}
+
+func (r *Room) transitionState(newState RoomState) {
+	previous := r.State
+	r.State = newState
+	slog.Info("state transition", "roomCode", r.Code, "from", previous, "to", newState)
+}
+
 func (r *Room) transferHost() {
 	for id, player := range r.Players {
 		player.IsHost = false
@@ -266,7 +395,7 @@ func (r *Room) StartGame() error {
 		return errors.New("not enough categories")
 	}
 
-	r.State = RoomStateCategoryVoting
+	r.transitionState(RoomStateCategoryVoting)
 	r.Round = 1
 	r.CategoryVotes = make(map[string]string)
 	r.SelectedCategories = append([]models.Category(nil), r.AvailableCategories...)
@@ -276,7 +405,7 @@ func (r *Room) StartGame() error {
 }
 
 func (r *Room) startCategoryVoting() error {
-	r.State = RoomStateCategoryVoting
+	r.transitionState(RoomStateCategoryVoting)
 	if len(r.SelectedCategories) == 0 {
 		r.SelectedCategories = append([]models.Category(nil), r.AvailableCategories...)
 	}
@@ -345,7 +474,7 @@ func (r *Room) FinalizeCategoryVoting() error {
 	selected := r.pickWinningCategoryLocked()
 	r.SelectedCategoryID = selected.ID
 	r.SelectedCategoryName = selected.Name
-	r.State = RoomStateQuestionActive
+	r.transitionState(RoomStateQuestionActive)
 	r.removeSelectedCategory(selected.ID)
 	r.Mutex.Unlock()
 
@@ -414,12 +543,12 @@ func (r *Room) advanceQuestion() error {
 	r.Mutex.Lock()
 	defer r.Mutex.Unlock()
 	if r.CurrentQuestionIndex >= len(r.Questions) {
-		r.State = RoomStateGameOver
+		r.transitionState(RoomStateGameOver)
 		slog.Info("all questions complete", "roomCode", r.Code)
 		return r.broadcastGameOver()
 	}
 
-	r.State = RoomStateQuestionActive
+	r.transitionState(RoomStateQuestionActive)
 	question := r.Questions[r.CurrentQuestionIndex]
 	r.QuestionStartedAt = time.Now()
 	r.QuestionDeadline = r.QuestionStartedAt.Add(r.Config.QuestionDuration)
@@ -531,7 +660,7 @@ func (r *Room) completeQuestion() {
 		r.Mutex.Unlock()
 		return
 	}
-	r.State = RoomStateQuestionResult
+	r.transitionState(RoomStateQuestionResult)
 	question := r.CurrentQuestion()
 	leaderboard := r.buildLeaderboard(question)
 	r.Mutex.Unlock()
@@ -548,25 +677,33 @@ func (r *Room) completeQuestion() {
 		})
 	}
 
-	time.AfterFunc(5*time.Second, func() {
-		r.Mutex.Lock()
-		r.CurrentQuestionIndex++
-		finishedRound := r.CurrentQuestionIndex >= len(r.Questions)
-		r.Mutex.Unlock()
+	time.AfterFunc(r.Config.RoundSummaryDuration, func() {
+		r.advanceAfterResult()
+	})
+}
 
-		if finishedRound {
-			_ = r.broadcastRoundSummary()
-			if r.Round >= r.Config.MaxRounds || len(r.SelectedCategories) == 0 {
-				_ = r.broadcastGameOver()
-				return
-			}
-			r.Round++
-			_ = r.startCategoryVoting()
+func (r *Room) advanceAfterResult() {
+	r.Mutex.Lock()
+	if r.State != RoomStateQuestionResult {
+		r.Mutex.Unlock()
+		return
+	}
+	r.CurrentQuestionIndex++
+	finishedRound := r.CurrentQuestionIndex >= len(r.Questions)
+	r.Mutex.Unlock()
+
+	if finishedRound {
+		_ = r.broadcastRoundSummary()
+		if r.Round >= r.Config.MaxRounds || len(r.SelectedCategories) == 0 {
+			_ = r.broadcastGameOver()
 			return
 		}
+		r.Round++
+		_ = r.startCategoryVoting()
+		return
+	}
 
-		_ = r.advanceQuestion()
-	})
+	_ = r.advanceQuestion()
 }
 
 func (r *Room) buildLeaderboard(question *models.Question) []LeaderboardEntry {
@@ -590,13 +727,17 @@ func (r *Room) buildLeaderboard(question *models.Question) []LeaderboardEntry {
 }
 
 func (r *Room) broadcastGameOver() error {
-	if r.Broadcast == nil {
-		return nil
-	}
+	r.Mutex.Lock()
+	r.transitionState(RoomStateGameOver)
 	leaderboard := r.buildLeaderboard(nil)
 	winner := ""
 	if len(leaderboard) > 0 {
 		winner = leaderboard[0].Nickname
+	}
+	r.Mutex.Unlock()
+
+	if r.Broadcast == nil {
+		return nil
 	}
 	slog.Info("game over", "roomCode", r.Code, "winner", winner)
 	if err := r.Broadcast(EventEnvelope{

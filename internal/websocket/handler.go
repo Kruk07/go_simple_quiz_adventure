@@ -78,9 +78,16 @@ func (s *WebSocketServer) JoinRoomHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	playerID := fmt.Sprintf("p-%d", len(room.Players)+1)
-	player := &game.Player{ID: playerID, Nickname: nickname}
-	room.AddPlayer(player)
+	var player *game.Player
+	var playerID string
+	if reconnected, ok := room.ReconnectPlayer(nickname); ok {
+		player = reconnected
+		playerID = player.ID
+	} else {
+		playerID = fmt.Sprintf("p-%d", len(room.Players)+1)
+		player = &game.Player{ID: playerID, Nickname: nickname}
+		room.AddPlayer(player)
+	}
 
 	s.Mutex.Lock()
 	if _, ok := s.Connections[roomCode]; !ok {
@@ -113,6 +120,24 @@ func (s *WebSocketServer) broadcastRoom(room *game.Room, envelope game.EventEnve
 	return nil
 }
 
+func (s *WebSocketServer) removeRoom(roomCode string) {
+	s.Mutex.Lock()
+	defer s.Mutex.Unlock()
+
+	if room, ok := s.Rooms[roomCode]; ok {
+		room.Shutdown()
+		delete(s.Rooms, roomCode)
+	}
+	if conns, ok := s.Connections[roomCode]; ok {
+		for _, conn := range conns {
+			if conn != nil {
+				_ = conn.Close()
+			}
+		}
+		delete(s.Connections, roomCode)
+	}
+}
+
 func (s *WebSocketServer) readMessages(conn *websocket.Conn, room *game.Room, player *game.Player) {
 	defer func() {
 		conn.Close()
@@ -120,6 +145,12 @@ func (s *WebSocketServer) readMessages(conn *websocket.Conn, room *game.Room, pl
 		s.Mutex.Lock()
 		if conns, ok := s.Connections[room.Code]; ok {
 			delete(conns, player.ID)
+			if len(conns) == 0 {
+				delete(s.Connections, room.Code)
+				s.Mutex.Unlock()
+				s.removeRoom(room.Code)
+				return
+			}
 		}
 		s.Mutex.Unlock()
 		_ = s.broadcastRoom(room, room.LobbyUpdate())
@@ -143,6 +174,19 @@ func (s *WebSocketServer) readMessages(conn *websocket.Conn, room *game.Room, pl
 			if err := room.StartGame(); err != nil {
 				slog.Error("start game failed", "roomCode", room.Code, "playerID", player.ID, "error", err)
 				continue
+			}
+		case "RESTART_GAME":
+			if player.ID != room.HostID {
+				continue
+			}
+			room.ResetForNewGame()
+			if err := room.StartGame(); err != nil {
+				slog.Error("restart game failed", "roomCode", room.Code, "playerID", player.ID, "error", err)
+				continue
+			}
+		case "LEAVE_ROOM":
+			if player != nil {
+				return
 			}
 		case "VOTE_CATEGORY":
 			payloadData, err := json.Marshal(envelope.Payload)

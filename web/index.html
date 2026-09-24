@@ -1,25 +1,184 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Quiz Adventure Test Client</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 16px; }
-        .grid { display: grid; gap: 16px; grid-template-columns: minmax(320px, 1fr) 1fr; }
-        .panel { border: 1px solid #ccc; border-radius: 8px; padding: 12px; background: #f8f8f8; }
-        .panel h2 { margin-top: 0; }
-        button { margin: 4px 4px 4px 0; padding: 8px 12px; }
-        .row { display: flex; flex-wrap: wrap; gap: 8px; }
-        .option-button { min-width: 104px; }
-        #log { min-height: 120px; max-height: 220px; padding: 12px; background: #111; color: #eee; overflow: auto; white-space: pre-wrap; border-radius: 6px; }
-        .field { margin-bottom: 8px; }
-        .field label { display: block; margin-bottom: 4px; font-weight: bold; }
-        .info { margin: 0; padding: 0; }
-        .summary { margin: 0 0 12px 0; }
+        :root {
+            --bg: #f4f7fb;
+            --panel: rgba(255, 255, 255, 0.88);
+            --border: #dfe7f3;
+            --text: #162033;
+            --muted: #54627a;
+            --primary: #3b82f6;
+            --primary-strong: #1d4ed8;
+            --success: #0f766e;
+            --warning: #b45309;
+            --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+        }
+
+        * { box-sizing: border-box; }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            background: linear-gradient(180deg, #eef5ff 0%, var(--bg) 100%);
+            color: var(--text);
+        }
+
+        body {
+            padding: max(16px, env(safe-area-inset-top)) 14px max(18px, env(safe-area-inset-bottom));
+        }
+
+        h1 {
+            margin: 0 0 16px;
+            font-size: clamp(1.7rem, 4vw, 2.3rem);
+            text-align: center;
+        }
+
+        .grid {
+            display: grid;
+            gap: 16px;
+            grid-template-columns: minmax(280px, 1fr) minmax(280px, 1fr);
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            padding: 16px;
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(8px);
+        }
+
+        .panel h2 {
+            margin: 0 0 12px;
+            font-size: 1.15rem;
+        }
+
+        .field {
+            margin-bottom: 12px;
+        }
+
+        .field label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 700;
+            color: var(--muted);
+        }
+
+        input {
+            width: 100%;
+            min-height: 48px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 12px 14px;
+            font-size: 1rem;
+            background: rgba(255,255,255,0.75);
+        }
+
+        button {
+            appearance: none;
+            border: none;
+            border-radius: 12px;
+            padding: 12px 14px;
+            background: linear-gradient(180deg, var(--primary) 0%, var(--primary-strong) 100%);
+            color: white;
+            font-size: 1rem;
+            font-weight: 700;
+            cursor: pointer;
+            min-height: 48px;
+            touch-action: manipulation;
+            transition: transform 0.15s ease, opacity 0.15s ease;
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        .row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .row.stacked {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        }
+
+        .option-button {
+            flex: 1 1 calc(50% - 8px);
+            min-width: 120px;
+            min-height: 54px;
+            font-size: 0.98rem;
+            background: linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+
+        #log {
+            min-height: 150px;
+            max-height: 260px;
+            overflow: auto;
+            white-space: pre-wrap;
+            padding: 12px;
+            border-radius: 12px;
+            background: #0f172a;
+            color: #e2e8f0;
+            line-height: 1.5;
+            font-size: 0.92rem;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            min-height: 28px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: rgba(59, 130, 246, 0.12);
+            color: var(--primary-strong);
+            font-weight: 700;
+        }
+
+        .summary {
+            margin: 0 0 10px;
+            color: var(--muted);
+        }
+
+        ul {
+            margin: 8px 0 0 18px;
+            padding: 0;
+        }
+
+        li {
+            margin-bottom: 6px;
+        }
+
+        .panel-wide {
+            grid-column: 1 / -1;
+        }
+
+        @media (max-width: 700px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+
+            .option-button {
+                flex: 1 1 100%;
+            }
+
+            .row {
+                display: grid;
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 </head>
 <body>
-    <h1>Quiz Adventure Test Client</h1>
+    <h1>Quiz Adventure</h1>
     <div class="grid">
         <div class="panel">
             <h2>Connection</h2>
@@ -31,15 +190,16 @@
                 <label for="nickname">Nickname</label>
                 <input id="nickname" placeholder="Nickname" />
             </div>
-            <div class="row">
+            <div class="row stacked">
                 <button id="create-room">Create Room</button>
+                <button id="copy-room" style="background: linear-gradient(180deg, #0f766e 0%, #115e59 100%);">Copy Code</button>
                 <button id="join-room">Join Room</button>
-            </div>
-            <div class="row">
-                <button id="start-game">Start Game</button>
+                <button id="start-game" style="background: linear-gradient(180deg, #eab308 0%, #b45309 100%);">Start Game</button>
+                <button id="restart-game" style="background: linear-gradient(180deg, #8b5cf6 0%, #6d28d9 100%); display: none;">Restart Game</button>
+                <button id="leave-room" style="background: linear-gradient(180deg, #ef4444 0%, #b91c1c 100%);">Leave Room</button>
             </div>
             <div class="field">
-                <p class="summary" id="status">Not connected</p>
+                <p class="summary"><span class="badge" id="status">Not connected</span></p>
                 <p class="summary" id="room-info">No room selected</p>
             </div>
         </div>
@@ -49,17 +209,17 @@
             <div id="game-state">No game yet.</div>
         </div>
 
-        <div class="panel">
+        <div id="category-panel" class="panel" style="display: none;">
             <h2>Category Voting</h2>
             <div id="category-buttons" class="row"></div>
         </div>
 
-        <div class="panel">
+        <div id="answer-panel" class="panel" style="display: none;">
             <h2>Answer Submission</h2>
             <div id="answer-buttons" class="row"></div>
         </div>
 
-        <div class="panel" style="grid-column: 1 / -1;">
+        <div class="panel panel-wide">
             <h2>Event Log</h2>
             <div id="log">Ready.</div>
         </div>
@@ -72,10 +232,31 @@
         const logEl = document.getElementById('log');
         const categoryButtonsEl = document.getElementById('category-buttons');
         const answerButtonsEl = document.getElementById('answer-buttons');
+        const categoryPanelEl = document.getElementById('category-panel');
+        const answerPanelEl = document.getElementById('answer-panel');
+        const restartGameBtn = document.getElementById('restart-game');
+        const leaveRoomBtn = document.getElementById('leave-room');
 
         let socket = null;
         let currentQuestionId = '';
         let categoryOptions = [];
+
+        function getSocketUrl(roomCode, nickname) {
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+            const params = new URLSearchParams();
+            if (roomCode) params.set('roomCode', roomCode);
+            if (nickname) params.set('nickname', nickname);
+            const queryString = params.toString();
+            return `${wsProtocol}://${window.location.host}/join-room${queryString ? `?${queryString}` : ''}`;
+        }
+
+        function seedFromQueryString() {
+            const params = new URLSearchParams(window.location.search);
+            const roomCode = params.get('roomCode');
+            const nickname = params.get('nickname');
+            if (roomCode) document.getElementById('room-code').value = roomCode;
+            if (nickname) document.getElementById('nickname').value = nickname;
+        }
 
         function appendLog(message) {
             logEl.textContent += '\n' + message;
@@ -84,6 +265,9 @@
 
         function setStatus(message) {
             statusEl.textContent = message;
+            const tone = message.toLowerCase().includes('connected') ? '#0f766e' : '#1d4ed8';
+            statusEl.style.background = tone === '#0f766e' ? 'rgba(15, 118, 110, 0.12)' : 'rgba(59, 130, 246, 0.12)';
+            statusEl.style.color = tone === '#0f766e' ? '#0f766e' : '#1d4ed8';
         }
 
         function setRoomInfo(message) {
@@ -102,10 +286,18 @@
             return button;
         }
 
+        function showPanel(panel, visible) {
+            panel.style.display = visible ? '' : 'none';
+        }
+
+        function showRestartButton(visible) {
+            restartGameBtn.style.display = visible ? '' : 'none';
+        }
+
         function renderCategoryButtons() {
             categoryButtonsEl.innerHTML = '';
             if (categoryOptions.length === 0) {
-                categoryButtonsEl.textContent = 'Waiting for CATEGORY_VOTE_START...';
+                categoryButtonsEl.textContent = 'Waiting for category voting...';
                 return;
             }
             categoryOptions.forEach((option, index) => {
@@ -152,8 +344,23 @@
                 const body = await res.json();
                 document.getElementById('room-code').value = body.roomCode;
                 appendLog(`Created room ${body.roomCode}`);
+                setRoomInfo(`Room ${body.roomCode} ready`);
             } catch (err) {
                 appendLog('Error creating room: ' + err.message);
+            }
+        };
+
+        document.getElementById('copy-room').onclick = async () => {
+            const value = document.getElementById('room-code').value.trim();
+            if (!value) {
+                appendLog('No room code to copy');
+                return;
+            }
+            try {
+                await navigator.clipboard.writeText(value);
+                appendLog(`Copied room code ${value}`);
+            } catch (err) {
+                appendLog('Copy failed: ' + err.message);
             }
         };
 
@@ -164,12 +371,12 @@
                 appendLog('roomCode and nickname required');
                 return;
             }
-            const url = `ws://${window.location.host}/join-room?roomCode=${roomCode}&nickname=${nickname}`;
+            const url = getSocketUrl(roomCode, nickname);
             socket = new WebSocket(url);
 
             socket.onopen = () => {
                 setStatus('Connected');
-                setRoomInfo(`Room ${roomCode} as ${nickname}`);
+                setRoomInfo(`Room ${roomCode} • ${nickname}`);
                 appendLog('Connected to room ' + roomCode);
             };
 
@@ -197,32 +404,75 @@
             appendLog('START_GAME sent');
         };
 
+        restartGameBtn.onclick = () => {
+            if (!socket || socket.readyState !== WebSocket.OPEN) {
+                appendLog('Connect first');
+                return;
+            }
+            sendEvent('RESTART_GAME', {});
+            appendLog('RESTART_GAME sent');
+        };
+
+        leaveRoomBtn.onclick = () => {
+            if (!socket) {
+                appendLog('Not connected to a room');
+                return;
+            }
+            if (socket.readyState === WebSocket.OPEN) {
+                sendEvent('LEAVE_ROOM', {});
+            }
+            socket.close();
+            socket = null;
+            showRestartButton(false);
+            resetPanels();
+            setStatus('Not connected');
+            setRoomInfo('No room selected');
+            renderGameState('No game yet.');
+            appendLog('Left the room');
+        };
+
+        function resetPanels() {
+            showPanel(categoryPanelEl, false);
+            showPanel(answerPanelEl, false);
+            showRestartButton(false);
+        }
+
         function handleServerEvent(message) {
             appendLog(`Server event: ${message.type}`);
 
             switch (message.type) {
                 case 'LOBBY_UPDATE':
                     renderLobby(message.payload);
+                    resetPanels();
                     break;
                 case 'CATEGORY_VOTE_START':
                     categoryOptions = message.payload.categories || [];
+                    showPanel(categoryPanelEl, true);
+                    showPanel(answerPanelEl, false);
                     renderCategoryButtons();
-                    renderGameState(`<p class="summary">Category voting started</p><p>Select one of the categories below:</p>`);
+                    renderGameState('<p class="summary">Category voting started</p><p>Select one of the categories below:</p>');
                     break;
                 case 'QUESTION_START':
                     currentQuestionId = message.payload.questionId;
+                    showPanel(categoryPanelEl, false);
+                    showPanel(answerPanelEl, true);
                     renderQuestion(message.payload);
                     break;
                 case 'QUESTION_RESULT':
                     currentQuestionId = '';
+                    showPanel(answerPanelEl, false);
                     renderQuestionResult(message.payload);
                     break;
                 case 'ROUND_SUMMARY':
                     currentQuestionId = '';
+                    showPanel(answerPanelEl, false);
                     renderRoundSummary(message.payload);
                     break;
                 case 'GAME_OVER':
                     currentQuestionId = '';
+                    showPanel(categoryPanelEl, false);
+                    showPanel(answerPanelEl, false);
+                    showRestartButton(true);
                     renderGameOver(message.payload);
                     break;
                 default:
@@ -275,7 +525,9 @@
             `);
         }
 
+        resetPanels();
         renderAnswerButtons();
+        seedFromQueryString();
     </script>
 </body>
 </html>
