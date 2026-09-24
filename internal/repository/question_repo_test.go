@@ -26,15 +26,48 @@ func TestQuestionRepositoryInitSchemaAndSeed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list categories: %v", err)
 	}
-	if len(categories) == 0 {
-		t.Fatal("expected categories to be seeded")
+	if len(categories) < 20 {
+		t.Fatalf("expected at least 20 categories, got %d", len(categories))
 	}
 
 	questions, err := repo.ListQuestionsByCategory("cat-programming")
 	if err != nil {
 		t.Fatalf("list questions: %v", err)
 	}
-	if len(questions) == 0 {
-		t.Fatal("expected questions to be seeded")
+	if len(questions) < 40 {
+		t.Fatalf("expected at least 40 questions in programming, got %d", len(questions))
 	}
+
+	totalQuestions := 0
+	for _, category := range categories {
+		categoryQuestions, err := repo.ListQuestionsByCategory(category.ID)
+		if err != nil {
+			t.Fatalf("list questions for %s: %v", category.ID, err)
+		}
+		totalQuestions += len(categoryQuestions)
+	}
+	if totalQuestions < 1000 {
+		t.Fatalf("expected at least 1000 questions in total, got %d", totalQuestions)
+	}
+
+	seenCorrectLetters := map[string]struct{}{}
+	for _, category := range categories {
+		categoryQuestions, err := repo.ListQuestionsByCategory(category.ID)
+		if err != nil {
+			t.Fatalf("list questions for %s: %v", category.ID, err)
+		}
+		for _, question := range categoryQuestions[:min(10, len(categoryQuestions))] {
+			seenCorrectLetters[question.CorrectOption] = struct{}{}
+		}
+	}
+	if len(seenCorrectLetters) < 2 {
+		t.Fatalf("expected varied correct answer letters across generated questions, got %d unique letters", len(seenCorrectLetters))
+	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

@@ -53,6 +53,11 @@ func main() {
 		port = "8080"
 	}
 
-	logger.Info("server started", "database", dbPath, "port", port)
-	logger.Error("server stopped", "error", http.ListenAndServe(":"+port, nil))
+	addr := ":" + port
+	logger.Info("server started", "database", dbPath, "address", addr, "url", "http://localhost:"+port)
+
+	if err := http.ListenAndServe(addr, nil); err != nil {
+		logger.Error("server stopped", "error", err)
+		os.Exit(1)
+	}
 }
