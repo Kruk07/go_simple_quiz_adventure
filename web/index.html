@@ -4,6 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Quiz Adventure Test Client</title>
+    <script src="/i18n/en.js"></script>
+    <script src="/i18n/pl.js"></script>
     <style>
         :root {
             --bg: #f4f7fb;
@@ -190,6 +192,13 @@
                 <label for="nickname">Nickname</label>
                 <input id="nickname" placeholder="Nickname" />
             </div>
+            <div class="field">
+                <label for="language">Language</label>
+                <select id="language" style="width: 100%; min-height: 48px; border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; font-size: 1rem; background: rgba(255,255,255,0.75);">
+                    <option value="en">English</option>
+                    <option value="pl">Polski</option>
+                </select>
+            </div>
             <div class="row stacked">
                 <button id="create-room">Create Room</button>
                 <button id="copy-room" style="background: linear-gradient(180deg, #0f766e 0%, #115e59 100%);">Copy Code</button>
@@ -236,16 +245,160 @@
         const answerPanelEl = document.getElementById('answer-panel');
         const restartGameBtn = document.getElementById('restart-game');
         const leaveRoomBtn = document.getElementById('leave-room');
+        const languageSelectEl = document.getElementById('language');
+
+        const uiText = {
+            en: {
+                title: 'Quiz Adventure',
+                connection: 'Connection',
+                roomCode: 'Room Code',
+                nickname: 'Nickname',
+                createRoom: 'Create Room',
+                copyCode: 'Copy Code',
+                joinRoom: 'Join Room',
+                startGame: 'Start Game',
+                restartGame: 'Restart Game',
+                leaveRoom: 'Leave Room',
+                notConnected: 'Not connected',
+                noRoomSelected: 'No room selected',
+                currentGame: 'Current Game',
+                noGameYet: 'No game yet.',
+                categoryVoting: 'Category Voting',
+                answerSubmission: 'Answer Submission',
+                eventLog: 'Event Log',
+                ready: 'Ready.',
+                languageLabel: 'Language',
+                waitingForCategoryVoting: 'Waiting for category voting...',
+                connectFirst: 'Connect first',
+                roomAndNicknameRequired: 'roomCode and nickname required',
+                cannotVote: 'Cannot vote: not connected',
+                cannotAnswer: 'Cannot answer: wait for question',
+                noRoomToLeave: 'Not connected to a room',
+                leftTheRoom: 'Left the room',
+                lobby: 'Lobby',
+                players: 'Players:',
+                selectOneOfCategories: 'Select one of the categories below:',
+                categoryVotingStarted: 'Category voting started',
+                answerWithButtons: 'Answer with buttons below.',
+                question: 'Question',
+                summary: 'Summary',
+                winner: 'Winner:',
+                correctAnswer: 'Correct answer:',
+                gameOver: 'Game Over',
+                room: 'Room',
+                connected: 'Connected',
+                disconnected: 'Disconnected',
+                category: 'Category',
+                round: 'Round',
+                questionsAnswered: 'Questions answered:',
+                roomReady: 'Room ready',
+                connectedToRoom: 'Connected to room',
+                createdRoom: 'Created room',
+                noRoomCode: 'No room code to copy',
+                copiedRoomCode: 'Copied room code',
+                copyFailed: 'Copy failed:',
+                websocketError: 'WebSocket error:',
+                webSocketNotConnected: 'WebSocket not connected',
+                serverEvent: 'Server event:'
+            },
+            pl: {
+                title: 'Quiz Adventure',
+                connection: 'Połączenie',
+                roomCode: 'Kod pokoju',
+                nickname: 'Nick',
+                createRoom: 'Utwórz pokój',
+                copyCode: 'Kopiuj kod',
+                joinRoom: 'Dołącz',
+                startGame: 'Rozpocznij grę',
+                restartGame: 'Zagraj ponownie',
+                leaveRoom: 'Opuść pokój',
+                notConnected: 'Nie połączono',
+                noRoomSelected: 'Nie wybrano pokoju',
+                currentGame: 'Aktualna gra',
+                noGameYet: 'Brak gry.',
+                categoryVoting: 'Głosowanie kategorii',
+                answerSubmission: 'Odpowiedzi',
+                eventLog: 'Log zdarzeń',
+                ready: 'Gotowe.',
+                languageLabel: 'Język',
+                waitingForCategoryVoting: 'Czekanie na głosowanie kategorii...',
+                connectFirst: 'Najpierw połącz się',
+                roomAndNicknameRequired: 'kod pokoju i nick są wymagane',
+                cannotVote: 'Nie można głosować: brak połączenia',
+                cannotAnswer: 'Nie można odpowiedzieć: zaczekaj na pytanie',
+                noRoomToLeave: 'Brak połączenia z pokojem',
+                leftTheRoom: 'Opuszczono pokój',
+                lobby: 'Lobby',
+                players: 'Gracze:',
+                selectOneOfCategories: 'Wybierz jedną z kategorii poniżej:',
+                categoryVotingStarted: 'Rozpoczęto głosowanie kategorii',
+                answerWithButtons: 'Odpowiedz przyciskami poniżej.',
+                question: 'Pytanie',
+                summary: 'Podsumowanie',
+                winner: 'Zwycięzca:',
+                correctAnswer: 'Poprawna odpowiedź:',
+                gameOver: 'Koniec gry',
+                room: 'Pokój',
+                connected: 'Połączono',
+                disconnected: 'Rozłączono',
+                category: 'Kategoria',
+                round: 'Runda',
+                questionsAnswered: 'Odpowiedziano pytań:',
+                roomReady: 'Pokój gotowy',
+                connectedToRoom: 'Połączono z pokojem',
+                createdRoom: 'Utworzono pokój',
+                noRoomCode: 'Brak kodu pokoju do skopiowania',
+                copiedRoomCode: 'Skopiowano kod pokoju',
+                copyFailed: 'Kopiowanie nie powiodło się:',
+                websocketError: 'Błąd WebSocket:',
+                webSocketNotConnected: 'WebSocket nie jest podłączony',
+                serverEvent: 'Zdarzenie serwera:'
+            }
+        };
+
+        const localeData = window.quizLocaleData || {
+            en: { categories: {}, questions: {} },
+            pl: { categories: {}, questions: {} }
+        };
+
+        function getTranslationsForCurrentLanguage() {
+            return localeData[currentLanguage] || { categories: {}, questions: {} };
+        }
+
+        function getCategoryLabel(category) {
+            if (!category) return '';
+            const categoryKey = category.id || category;
+            const translations = getTranslationsForCurrentLanguage().categories || {};
+            return translations[categoryKey] || category.name || category;
+        }
+
+        function translateQuestionPayload(payload) {
+            const questionKey = payload.questionId || payload.id;
+            const translations = getTranslationsForCurrentLanguage().questions || {};
+            const translation = translations[questionKey];
+            if (!translation) {
+                return payload;
+            }
+            return {
+                ...payload,
+                text: translation.text || payload.text,
+                options: translation.options || payload.options,
+                correctAnswer: translation.correctOption || payload.correctAnswer,
+                category: payload.category || payload.categoryName
+            };
+        }
 
         let socket = null;
         let currentQuestionId = '';
         let categoryOptions = [];
+        let currentLanguage = 'en';
 
         function getSocketUrl(roomCode, nickname) {
             const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
             const params = new URLSearchParams();
             if (roomCode) params.set('roomCode', roomCode);
             if (nickname) params.set('nickname', nickname);
+            params.set('lang', currentLanguage);
             const queryString = params.toString();
             return `${wsProtocol}://${window.location.host}/join-room${queryString ? `?${queryString}` : ''}`;
         }
@@ -256,6 +409,43 @@
             const nickname = params.get('nickname');
             if (roomCode) document.getElementById('room-code').value = roomCode;
             if (nickname) document.getElementById('nickname').value = nickname;
+        }
+
+        function t(key) {
+            return (uiText[currentLanguage] && uiText[currentLanguage][key]) || uiText.en[key] || key;
+        }
+
+        function applyLanguage() {
+            document.title = t('title');
+            document.querySelector('h1').textContent = t('title');
+            document.querySelector('.panel h2').textContent = t('connection');
+            document.querySelectorAll('.panel h2')[1].textContent = t('currentGame');
+            document.querySelectorAll('.panel h2')[2].textContent = t('categoryVoting');
+            document.querySelectorAll('.panel h2')[3].textContent = t('answerSubmission');
+            document.querySelectorAll('.panel h2')[4].textContent = t('eventLog');
+            document.querySelector('label[for="room-code"]').textContent = t('roomCode');
+            document.querySelector('label[for="nickname"]').textContent = t('nickname');
+            document.querySelector('label[for="language"]').textContent = t('languageLabel') || 'Language';
+            document.getElementById('room-code').placeholder = t('roomCode');
+            document.getElementById('nickname').placeholder = t('nickname');
+            document.getElementById('create-room').textContent = t('createRoom');
+            document.getElementById('copy-room').textContent = t('copyCode');
+            document.getElementById('join-room').textContent = t('joinRoom');
+            document.getElementById('start-game').textContent = t('startGame');
+            document.getElementById('restart-game').textContent = t('restartGame');
+            document.getElementById('leave-room').textContent = t('leaveRoom');
+            statusEl.textContent = currentLanguage === 'pl' ? 'Nie połączono' : 'Not connected';
+            roomInfoEl.textContent = roomInfoEl.textContent || t('noRoomSelected');
+            if (categoryOptions.length) {
+                renderCategoryButtons();
+            }
+            if (currentQuestionId) {
+                const current = { questionId: currentQuestionId };
+                const translated = translateQuestionPayload(current);
+                if (translated && translated.text) {
+                    renderGameState(document.getElementById('game-state').innerHTML);
+                }
+            }
         }
 
         function appendLog(message) {
@@ -297,14 +487,15 @@
         function renderCategoryButtons() {
             categoryButtonsEl.innerHTML = '';
             if (categoryOptions.length === 0) {
-                categoryButtonsEl.textContent = 'Waiting for category voting...';
+                categoryButtonsEl.textContent = t('waitingForCategoryVoting');
                 return;
             }
             categoryOptions.forEach((option, index) => {
                 const label = String.fromCharCode(65 + index);
-                const button = createButton(`${label}: ${option.name}`, () => {
+                const categoryName = getCategoryLabel(option);
+                const button = createButton(`${label}: ${categoryName}`, () => {
                     if (!socket || socket.readyState !== WebSocket.OPEN) {
-                        appendLog('Cannot vote: not connected');
+                        appendLog(t('cannotVote'));
                         return;
                     }
                     sendEvent('VOTE_CATEGORY', { categoryId: option.id });
@@ -320,7 +511,7 @@
                 const label = String.fromCharCode(65 + i);
                 const button = createButton(label, () => {
                     if (!socket || socket.readyState !== WebSocket.OPEN || !currentQuestionId) {
-                        appendLog('Cannot answer: wait for question');
+                        appendLog(t('cannotAnswer'));
                         return;
                     }
                     sendEvent('SUBMIT_ANSWER', { questionId: currentQuestionId, answer: label });
@@ -343,24 +534,24 @@
                 const res = await fetch('/create-room');
                 const body = await res.json();
                 document.getElementById('room-code').value = body.roomCode;
-                appendLog(`Created room ${body.roomCode}`);
-                setRoomInfo(`Room ${body.roomCode} ready`);
+                appendLog(`${t('createdRoom')} ${body.roomCode}`);
+                setRoomInfo(`${t('room')} ${body.roomCode} ${t('roomReady')}`);
             } catch (err) {
-                appendLog('Error creating room: ' + err.message);
+                appendLog(t('copyFailed') + ' ' + err.message);
             }
         };
 
         document.getElementById('copy-room').onclick = async () => {
             const value = document.getElementById('room-code').value.trim();
             if (!value) {
-                appendLog('No room code to copy');
+                appendLog(t('noRoomCode'));
                 return;
             }
             try {
                 await navigator.clipboard.writeText(value);
-                appendLog(`Copied room code ${value}`);
+                appendLog(`${t('copiedRoomCode')} ${value}`);
             } catch (err) {
-                appendLog('Copy failed: ' + err.message);
+                appendLog(`${t('copyFailed')} ${err.message}`);
             }
         };
 
@@ -368,16 +559,16 @@
             const roomCode = document.getElementById('room-code').value.trim();
             const nickname = document.getElementById('nickname').value.trim();
             if (!roomCode || !nickname) {
-                appendLog('roomCode and nickname required');
+                appendLog(t('roomAndNicknameRequired'));
                 return;
             }
             const url = getSocketUrl(roomCode, nickname);
             socket = new WebSocket(url);
 
             socket.onopen = () => {
-                setStatus('Connected');
-                setRoomInfo(`Room ${roomCode} • ${nickname}`);
-                appendLog('Connected to room ' + roomCode);
+                setStatus(t('connected'));
+                setRoomInfo(`${t('room')} ${roomCode} • ${nickname}`);
+                appendLog(`${t('connectedToRoom')} ${roomCode}`);
             };
 
             socket.onmessage = event => {
@@ -386,18 +577,18 @@
             };
 
             socket.onclose = () => {
-                setStatus('Disconnected');
+                setStatus(t('disconnected'));
                 appendLog('WebSocket closed');
             };
 
             socket.onerror = e => {
-                appendLog('WebSocket error: ' + (e.message || 'unknown'));
+                appendLog(`${t('websocketError')} ${e.message || 'unknown'}`);
             };
         };
 
         document.getElementById('start-game').onclick = () => {
             if (!socket || socket.readyState !== WebSocket.OPEN) {
-                appendLog('Connect first');
+                appendLog(t('connectFirst'));
                 return;
             }
             sendEvent('START_GAME', {});
@@ -406,7 +597,7 @@
 
         restartGameBtn.onclick = () => {
             if (!socket || socket.readyState !== WebSocket.OPEN) {
-                appendLog('Connect first');
+                appendLog(t('connectFirst'));
                 return;
             }
             sendEvent('RESTART_GAME', {});
@@ -415,7 +606,7 @@
 
         leaveRoomBtn.onclick = () => {
             if (!socket) {
-                appendLog('Not connected to a room');
+                appendLog(t('noRoomToLeave'));
                 return;
             }
             if (socket.readyState === WebSocket.OPEN) {
@@ -425,10 +616,10 @@
             socket = null;
             showRestartButton(false);
             resetPanels();
-            setStatus('Not connected');
-            setRoomInfo('No room selected');
-            renderGameState('No game yet.');
-            appendLog('Left the room');
+            setStatus(t('notConnected'));
+            setRoomInfo(t('noRoomSelected'));
+            renderGameState(t('noGameYet'));
+            appendLog(t('leftTheRoom'));
         };
 
         function resetPanels() {
@@ -438,7 +629,7 @@
         }
 
         function handleServerEvent(message) {
-            appendLog(`Server event: ${message.type}`);
+            appendLog(`${t('serverEvent')} ${message.type}`);
 
             switch (message.type) {
                 case 'LOBBY_UPDATE':
@@ -450,7 +641,7 @@
                     showPanel(categoryPanelEl, true);
                     showPanel(answerPanelEl, false);
                     renderCategoryButtons();
-                    renderGameState('<p class="summary">Category voting started</p><p>Select one of the categories below:</p>');
+                    renderGameState(`<p class="summary">${t('categoryVotingStarted')}</p><p>${t('selectOneOfCategories')}</p>`);
                     break;
                 case 'QUESTION_START':
                     currentQuestionId = message.payload.questionId;
@@ -482,18 +673,19 @@
 
         function renderLobby(payload) {
             const players = payload.players.map(p => `${p.nickname}${p.isHost ? ' (host)' : ''}${p.connected ? '' : ' [disconnected]'}`);
-            renderGameState(`<p class="summary">Lobby</p><p>Players:</p><ul>${players.map(p => `<li>${p}</li>`).join('')}</ul>`);
+            renderGameState(`<p class="summary">${t('lobby')}</p><p>${t('players')}</p><ul>${players.map(p => `<li>${p}</li>`).join('')}</ul>`);
         }
 
         function renderQuestion(payload) {
+            const translated = translateQuestionPayload(payload);
             const options = ['A', 'B', 'C', 'D'].map(letter => {
-                return `<li><strong>${letter}</strong>: ${payload.options[letter] || ''}</li>`;
+                return `<li><strong>${letter}</strong>: ${translated.options[letter] || ''}</li>`;
             }).join('');
             renderGameState(`
-                <p class="summary">Question ${payload.questionIndex} / ${payload.totalQuestions}</p>
-                <p><strong>${payload.text}</strong></p>
+                <p class="summary">${t('question')} ${translated.questionIndex || payload.questionIndex} / ${payload.totalQuestions}</p>
+                <p><strong>${translated.text || payload.text}</strong></p>
                 <ul>${options}</ul>
-                <p>Answer with buttons below.</p>
+                <p>${t('answerWithButtons')}</p>
             `);
         }
 
@@ -501,7 +693,7 @@
             const rows = payload.leaderboard.map(entry => `<li>${entry.nickname}: ${entry.score} (+${entry.gained})</li>`).join('');
             renderGameState(`
                 <p class="summary">Question Result</p>
-                <p>Correct answer: <strong>${payload.correctAnswer}</strong></p>
+                <p>${t('correctAnswer')} <strong>${payload.correctAnswer}</strong></p>
                 <ul>${rows}</ul>
             `);
         }
@@ -510,8 +702,8 @@
             const rows = payload.leaderboard.map(entry => `<li>${entry.nickname}: ${entry.score}</li>`).join('');
             renderGameState(`
                 <p class="summary">Round ${payload.round} Summary</p>
-                <p>Category: <strong>${payload.category}</strong></p>
-                <p>Questions answered: ${payload.questionsAnswered}/${payload.totalQuestions}</p>
+                <p>${t('category')}: <strong>${payload.category}</strong></p>
+                <p>${t('questionsAnswered')} ${payload.questionsAnswered}/${payload.totalQuestions}</p>
                 <ul>${rows}</ul>
             `);
         }
@@ -519,15 +711,34 @@
         function renderGameOver(payload) {
             const rows = payload.leaderboard.map(entry => `<li>${entry.nickname}: ${entry.score}</li>`).join('');
             renderGameState(`
-                <p class="summary">Game Over</p>
-                <p>Winner: <strong>${payload.winner}</strong></p>
+                <p class="summary">${t('gameOver')}</p>
+                <p>${t('winner')} <strong>${payload.winner}</strong></p>
                 <ul>${rows}</ul>
             `);
         }
 
+        languageSelectEl.addEventListener('change', (event) => {
+            currentLanguage = event.target.value;
+            localStorage.setItem('quiz-language', currentLanguage);
+            applyLanguage();
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.close();
+                socket = null;
+                const roomCode = document.getElementById('room-code').value.trim();
+                const nickname = document.getElementById('nickname').value.trim();
+                if (roomCode && nickname) {
+                    document.getElementById('join-room').click();
+                }
+            }
+        });
+
         resetPanels();
         renderAnswerButtons();
         seedFromQueryString();
+        const storedLang = localStorage.getItem('quiz-language') || 'en';
+        currentLanguage = storedLang === 'pl' ? 'pl' : 'en';
+        languageSelectEl.value = currentLanguage;
+        applyLanguage();
     </script>
 </body>
 </html>
