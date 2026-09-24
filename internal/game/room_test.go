@@ -3,6 +3,7 @@ package game
 import (
 	"go_simple_quiz_adventure/internal/models"
 	"testing"
+	"time"
 )
 
 func TestRoomHostAssignmentAndLobbyUpdate(t *testing.T) {
@@ -86,5 +87,52 @@ func TestRoomStartGameAndCategoryVoting(t *testing.T) {
 	// after all votes cast, state should eventually move to QUESTION_ACTIVE
 	if room.State != RoomStateQuestionActive {
 		t.Fatalf("expected room to be in QUESTION_ACTIVE after voting, got %s", room.State)
+	}
+}
+
+func TestRoomTransferHostClearsPreviousHostFlag(t *testing.T) {
+	room := NewRoom("123456")
+	first := &Player{ID: "p-1", Nickname: "Alice"}
+	second := &Player{ID: "p-2", Nickname: "Bob"}
+
+	room.AddPlayer(first)
+	room.AddPlayer(second)
+	room.RemovePlayer(first.ID)
+
+	if room.HostID != second.ID {
+		t.Fatalf("expected host transfer to %q, got %q", second.ID, room.HostID)
+	}
+	if !second.IsHost {
+		t.Fatal("expected remaining player to be host")
+	}
+	if first.IsHost {
+		t.Fatal("expected removed host to lose host flag")
+	}
+}
+
+func TestRoomRejectsLateAnswersUsingConfiguredDeadline(t *testing.T) {
+	room := NewRoom("123456")
+	room.Config = GameConfig{QuestionDuration: 2, CategoryVoteDuration: 15, RoundSummaryDuration: 5}
+	room.State = RoomStateQuestionActive
+	room.Questions = []models.Question{{
+		ID:            "q-1",
+		CategoryID:    "cat-1",
+		Text:          "Test?",
+		OptionA:       "A",
+		OptionB:       "B",
+		OptionC:       "C",
+		OptionD:       "D",
+		CorrectOption: "A",
+	}}
+	room.CurrentQuestionIndex = 0
+	room.QuestionStartedAt = time.Now().Add(-3 * time.Second)
+	room.Players = map[string]*Player{
+		"p-1": {ID: "p-1", Nickname: "Alice"},
+	}
+	room.AnswerSubmissions = map[string]AnswerSubmission{}
+	room.Scoreboard = map[string]int{"p-1": 0}
+
+	if err := room.SubmitAnswer("p-1", "q-1", "A"); err == nil {
+		t.Fatal("expected late answer to be rejected")
 	}
 }

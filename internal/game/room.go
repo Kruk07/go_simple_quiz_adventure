@@ -2,6 +2,7 @@ package game
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"math/rand"
 	"sort"
@@ -19,6 +20,26 @@ type Player struct {
 }
 
 type RoomState string
+
+type GameConfig struct {
+	MinPlayers           int
+	MaxRounds            int
+	QuestionsPerRound    int
+	CategoryVoteDuration time.Duration
+	QuestionDuration     time.Duration
+	RoundSummaryDuration time.Duration
+}
+
+func DefaultGameConfig() GameConfig {
+	return GameConfig{
+		MinPlayers:           2,
+		MaxRounds:            4,
+		QuestionsPerRound:    5,
+		CategoryVoteDuration: 15 * time.Second,
+		QuestionDuration:     20 * time.Second,
+		RoundSummaryDuration: 5 * time.Second,
+	}
+}
 
 const (
 	RoomStateLobby          RoomState = "LOBBY"
@@ -92,6 +113,7 @@ type Room struct {
 	HostID               string
 	State                RoomState
 	Round                int
+	Config               GameConfig
 	AvailableCategories  []models.Category
 	CategoryOptions      []models.Category
 	SelectedCategories   []models.Category
@@ -101,6 +123,7 @@ type Room struct {
 	Questions            []models.Question
 	CurrentQuestionIndex int
 	QuestionStartedAt    time.Time
+	QuestionDeadline     time.Time
 	AnswerSubmissions    map[string]AnswerSubmission
 	Scoreboard           map[string]int
 	Broadcast            func(EventEnvelope) error
@@ -117,6 +140,7 @@ func NewRoom(code string) *Room {
 		DisconnectTimers: make(map[string]*time.Timer),
 		State:            RoomStateLobby,
 		Scoreboard:       make(map[string]int),
+		Config:           DefaultGameConfig(),
 	}
 }
 
@@ -140,6 +164,8 @@ func (r *Room) RemovePlayer(playerID string) {
 	if _, ok := r.Players[playerID]; !ok {
 		return
 	}
+	player := r.Players[playerID]
+	player.IsHost = false
 	r.stopDisconnectTimer(playerID)
 	delete(r.Players, playerID)
 	delete(r.Scoreboard, playerID)
@@ -191,9 +217,16 @@ func (r *Room) RestorePlayerConnection(playerID string) bool {
 }
 
 func (r *Room) transferHost() {
-	for _, player := range r.Players {
+	for id, player := range r.Players {
+		player.IsHost = false
+		if id == r.HostID {
+			player.IsHost = true
+		}
+	}
+
+	for id, player := range r.Players {
 		player.IsHost = true
-		r.HostID = player.ID
+		r.HostID = id
 		return
 	}
 	r.HostID = ""
@@ -226,8 +259,8 @@ func (r *Room) StartGame() error {
 	if r.State != RoomStateLobby {
 		return errors.New("game already started")
 	}
-	if len(r.Players) < 2 {
-		return errors.New("at least 2 players required to start")
+	if len(r.Players) < r.Config.MinPlayers {
+		return fmt.Errorf("at least %d players required to start", r.Config.MinPlayers)
 	}
 	if len(r.AvailableCategories) < 4 {
 		return errors.New("not enough categories")
@@ -258,7 +291,7 @@ func (r *Room) startCategoryVoting() error {
 		Type: "CATEGORY_VOTE_START",
 		Payload: CategoryVoteStartPayload{
 			Round:           r.Round,
-			DurationSeconds: 15,
+			DurationSeconds: int(r.Config.CategoryVoteDuration / time.Second),
 			Categories:      r.CategoryOptions,
 		},
 	}
@@ -267,7 +300,10 @@ func (r *Room) startCategoryVoting() error {
 		return err
 	}
 
-	r.categoryTimer = time.AfterFunc(15*time.Second, func() {
+	if r.categoryTimer != nil {
+		r.categoryTimer.Stop()
+	}
+	r.categoryTimer = time.AfterFunc(r.Config.CategoryVoteDuration, func() {
 		_ = r.FinalizeCategoryVoting()
 	})
 
@@ -362,7 +398,11 @@ func (r *Room) startQuestionRound() error {
 		return err
 	}
 
-	r.Questions = sampleQuestions(questions, 5)
+	questionLimit := r.Config.QuestionsPerRound
+	if questionLimit > len(questions) {
+		questionLimit = len(questions)
+	}
+	r.Questions = sampleQuestions(questions, questionLimit)
 	r.CurrentQuestionIndex = 0
 	r.AnswerSubmissions = make(map[string]AnswerSubmission)
 	slog.Info("question round started", "roomCode", r.Code, "category", r.SelectedCategoryName, "questions", len(r.Questions))
@@ -382,6 +422,7 @@ func (r *Room) advanceQuestion() error {
 	r.State = RoomStateQuestionActive
 	question := r.Questions[r.CurrentQuestionIndex]
 	r.QuestionStartedAt = time.Now()
+	r.QuestionDeadline = r.QuestionStartedAt.Add(r.Config.QuestionDuration)
 	r.AnswerSubmissions = make(map[string]AnswerSubmission)
 	slog.Info("question started", "roomCode", r.Code, "questionIndex", r.CurrentQuestionIndex+1, "questionID", question.ID)
 	slog.Info("state transition", "roomCode", r.Code, "from", "QUESTION_RESULT", "to", "QUESTION_ACTIVE", "questionIndex", r.CurrentQuestionIndex+1)
@@ -404,7 +445,7 @@ func (r *Room) advanceQuestion() error {
 				"C": question.OptionC,
 				"D": question.OptionD,
 			},
-			DurationSeconds: 20,
+			DurationSeconds: int(r.Config.QuestionDuration / time.Second),
 		},
 	}
 
@@ -412,7 +453,10 @@ func (r *Room) advanceQuestion() error {
 		return err
 	}
 
-	r.questionTimer = time.AfterFunc(20*time.Second, func() {
+	if r.questionTimer != nil {
+		r.questionTimer.Stop()
+	}
+	r.questionTimer = time.AfterFunc(r.Config.QuestionDuration, func() {
 		r.completeQuestion()
 	})
 
@@ -438,15 +482,19 @@ func (r *Room) SubmitAnswer(playerID, questionID, answer string) error {
 		r.Mutex.Unlock()
 		return errors.New("already answered")
 	}
+	if time.Now().After(r.QuestionDeadline) {
+		r.Mutex.Unlock()
+		return errors.New("question expired")
+	}
 
 	timeElapsed := time.Now().Sub(r.QuestionStartedAt)
-	remaining := 20*time.Second - timeElapsed
+	remaining := r.Config.QuestionDuration - timeElapsed
 	if remaining < 0 {
 		remaining = 0
 	}
 	score := 0
 	if answer == question.CorrectOption {
-		bonus := int(50 * remaining.Seconds() / 20)
+		bonus := int(50 * remaining.Seconds() / r.Config.QuestionDuration.Seconds())
 		score = 100 + bonus
 	}
 
@@ -508,7 +556,7 @@ func (r *Room) completeQuestion() {
 
 		if finishedRound {
 			_ = r.broadcastRoundSummary()
-			if r.Round >= 4 || len(r.SelectedCategories) == 0 {
+			if r.Round >= r.Config.MaxRounds || len(r.SelectedCategories) == 0 {
 				_ = r.broadcastGameOver()
 				return
 			}
@@ -589,11 +637,13 @@ func (r *Room) broadcast(envelope EventEnvelope) error {
 	return r.Broadcast(envelope)
 }
 
+var roomRandom = rand.New(rand.NewSource(time.Now().UnixNano()))
+
 func sampleCategories(all []models.Category, count int) []models.Category {
 	if len(all) <= count {
 		return append([]models.Category(nil), all...)
 	}
-	indices := rand.Perm(len(all))[:count]
+	indices := roomRandom.Perm(len(all))[:count]
 	out := make([]models.Category, 0, count)
 	for _, idx := range indices {
 		out = append(out, all[idx])
@@ -605,7 +655,7 @@ func sampleQuestions(all []models.Question, count int) []models.Question {
 	if len(all) <= count {
 		return append([]models.Question(nil), all...)
 	}
-	indices := rand.Perm(len(all))[:count]
+	indices := roomRandom.Perm(len(all))[:count]
 	out := make([]models.Question, 0, count)
 	for _, idx := range indices {
 		out = append(out, all[idx])
@@ -617,7 +667,7 @@ func GenerateRoomCode() string {
 	const digits = "0123456789"
 	code := make([]byte, 6)
 	for i := range code {
-		code[i] = digits[rand.Intn(len(digits))]
+		code[i] = digits[roomRandom.Intn(len(digits))]
 	}
 	return string(code)
 }
