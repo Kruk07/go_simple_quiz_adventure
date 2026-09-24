@@ -332,12 +332,12 @@ window.quizLocaleData = window.quizLocaleData || {};
     ]
   };
 
-  function buildQuestionPool() {
+  function buildQuestionPoolFromBank(questionBank) {
     const questions = {};
     let questionNumber = 1;
 
     categories.forEach(({ id }) => {
-      const pool = categoryQuestionBanks[id] || [];
+      const pool = questionBank[id] || [];
       for (let index = 0; index < 42; index++) {
         const question = pool[index % pool.length] || {
           text: `Które odpowiedzi najlepiej pasują do ${id}?`,
@@ -370,6 +370,6 @@ window.quizLocaleData = window.quizLocaleData || {};
 
   window.quizLocaleData.pl = {
     categories: translatedCategories,
-    questions: buildQuestionPool()
+    questions: buildQuestionPoolFromBank(categoryQuestionBanks)
   };
 })();
